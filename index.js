@@ -1068,6 +1068,21 @@ function renderSidebarCats() {
       <span class="sb-cat-count">${cnt}</span>
     </div>`;
   }).join("");
+  renderMobileCats();
+}
+
+// MOBILE MENU CATEGORIES
+// ═══════════════════════════════════════════════
+function renderMobileCats() {
+  const el = document.getElementById("mobile-cats");
+  if (!el) return;
+  el.innerHTML = categories.map(c => {
+    const cnt = products.filter(p => p.category === c.id && p.status !== "inactive").length;
+    return `<div class="mm-cat-item" id="mmc-${c.id}" onclick="filterByCatMobile('${c.id}')">
+      <span class="mm-cat-icon">${c.icon || "📦"}</span>
+      <span class="mm-cat-name">${c.name}</span>
+    </div>`;
+  }).join("");
 }
 
 // ═══════════════════════════════════════════════
