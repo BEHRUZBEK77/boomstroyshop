@@ -118,6 +118,8 @@ let categories = [];
 let currentUser = null;
 let cart = [];
 let allOrders = [];
+let announcements = [];
+let _annUnsub = null;
 let currentCat = "";
 let currentPage = 1;
 let filteredProds = [];
@@ -1087,6 +1089,118 @@ function stopOrdersListener() {
   }
 }
 
+// ═══════════════════════════════════════════════
+// AKSIYA / E'LON / CHEGIRMA — BILDIRISHNOMALAR
+// Admin paneldan "announcements" kolleksiyasiga yoziladi,
+// bu yerda real-time ko'rsatiladi (banner + qo'ng'iroq).
+// ═══════════════════════════════════════════════
+function getSeenAnns() {
+  try { return JSON.parse(localStorage.getItem("bs_seen_anns") || "[]"); } catch { return []; }
+}
+function getDismissedAnns() {
+  try { return JSON.parse(localStorage.getItem("bs_dismissed_anns") || "[]"); } catch { return []; }
+}
+const ANN_TYPES = {
+  info: { ic: "📢", cls: "ann-info" },
+  discount: { ic: "🏷️", cls: "ann-discount" },
+  warning: { ic: "⚠️", cls: "ann-warning" },
+  success: { ic: "✅", cls: "ann-success" }
+};
+
+function startAnnListener() {
+  if (_annUnsub) { try { _annUnsub(); } catch { } _annUnsub = null; }
+  try {
+    const q = query(collection(db, "announcements"), where("active", "==", true));
+    _annUnsub = onSnapshot(q, (snap) => {
+      announcements = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+      renderAnnouncements();
+    }, (err) => {
+      console.warn("Ann listener xato:", err.message);
+      // Fallback — bir martalik o'qish
+      getDocs(query(collection(db, "announcements"))).then(s => {
+        announcements = s.docs.map(d => ({ id: d.id, ...d.data() }))
+          .filter(a => a.active)
+          .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+        renderAnnouncements();
+      }).catch(() => { });
+    });
+  } catch (e) { console.warn("startAnnListener:", e.message); }
+}
+
+function renderAnnouncements() {
+  // 1) Header qo'ng'iroq belgisi — o'qilmaganlar soni
+  const seen = getSeenAnns();
+  const unseen = announcements.filter(a => !seen.includes(a.id)).length;
+  const badge = document.getElementById("hdr-notif-badge");
+  if (badge) {
+    badge.textContent = unseen > 0 ? (unseen > 9 ? "9+" : unseen) : "";
+    badge.style.display = unseen > 0 ? "flex" : "none";
+  }
+
+  // 2) Bosh sahifa banneri — yopilmaganlar
+  const dismissed = getDismissedAnns();
+  const homeBox = document.getElementById("ann-home-banner");
+  if (homeBox) {
+    const show = announcements.filter(a => !dismissed.includes(a.id)).slice(0, 3);
+    homeBox.innerHTML = show.map(a => {
+      const t = ANN_TYPES[a.type] || ANN_TYPES.info;
+      return `<div class="ann-banner ${t.cls}">
+        <span class="ann-ic">${t.ic}</span>
+        <div style="flex:1;min-width:0">
+          <div class="ann-tt">${esc(a.title || "")}${a.discount ? `<span class="ann-disc">−${a.discount}%</span>` : ""}</div>
+          ${a.text ? `<div class="ann-tx">${esc(a.text)}</div>` : ""}
+        </div>
+        <span class="ann-x" onclick="dismissAnn('${a.id}')"><i class="fas fa-times"></i></span>
+      </div>`;
+    }).join("");
+  }
+
+  // 3) Modal ro'yxati (agar ochiq bo'lsa yangilanadi)
+  renderNotifList();
+}
+
+function renderNotifList() {
+  const body = document.getElementById("notif-body");
+  if (!body) return;
+  const seen = getSeenAnns();
+  if (!announcements.length) {
+    body.innerHTML = `<div class="empty-state"><span class="empty-state-icon">🔔</span><h3>Hozircha bildirishnoma yo'q</h3></div>`;
+    return;
+  }
+  body.innerHTML = announcements.map(a => {
+    const t = ANN_TYPES[a.type] || ANN_TYPES.info;
+    const isUnseen = !seen.includes(a.id);
+    const cls = (t.cls || "ann-info").replace("ann-", "");
+    const borderCol = { info: "#3b82f6", discount: "#eab308", warning: "#ef4444", success: "#22c55e" }[a.type] || "#3b82f6";
+    return `<div class="notif-item ${isUnseen ? "unseen" : ""}" style="border-left-color:${borderCol}">
+      <div class="ni-top">${t.ic} ${esc(a.title || "")}${a.discount ? `<span class="ann-disc">−${a.discount}%</span>` : ""}</div>
+      ${a.text ? `<div class="ni-tx">${esc(a.text)}</div>` : ""}
+      <div class="ni-date">${fmtDate(a.createdAt)}</div>
+    </div>`;
+  }).join("");
+}
+
+function esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+
+window.openNotif = function () {
+  openModal("modal-notif");
+  renderNotifList();
+  // Hammasini o'qilgan deb belgilash
+  const ids = announcements.map(a => a.id);
+  localStorage.setItem("bs_seen_anns", JSON.stringify(ids));
+  renderAnnouncements();
+};
+
+window.dismissAnn = function (id) {
+  const d = getDismissedAnns();
+  if (!d.includes(id)) d.push(id);
+  localStorage.setItem("bs_dismissed_anns", JSON.stringify(d));
+  renderAnnouncements();
+};
+
 async function loadMyOrders() {
   if (!currentUser) return;
   try {
@@ -2036,10 +2150,10 @@ window.confirmOrder = async function () {
           <div>Telegram'ga bildirishnoma yuborildi! ✓ Holat o'zgarganda ham xabar keladi.</div>
         </div>` : (tgId ? `<div class="alert-banner orange" style="margin-bottom:12px">
           <i class="fas fa-exclamation-triangle alert-icon"></i>
-          <div>Telegram xabar yuborilmadi. Botni avval <a href="https://t.me/boomstroy_bot" target="_blank">/start</a> qiling.</div>
+          <div>Telegram xabar yuborilmadi. Botni avval <a href="https://t.me/BoomStroyBot" target="_blank">/start</a> qiling.</div>
         </div>` : `<div class="alert-banner blue" style="margin-bottom:12px">
           <i class="fab fa-telegram alert-icon"></i>
-          <div>Telegram bildirish nomalari uchun botni start qiling: <a href="https://t.me/boomstroy_bot" target="_blank" style="font-weight:700">@boomstroy_bot</a></div>
+          <div>Telegram bildirish nomalari uchun botni start qiling: <a href="https://t.me/BoomStroyBot" target="_blank" style="font-weight:700">@BoomStroyBot</a></div>
         </div>`)}
         ${orderData.payment === "card" ? `<div class="alert-banner blue" style="margin-bottom:12px">
           <i class="fas fa-info-circle alert-icon"></i>
@@ -2198,14 +2312,19 @@ function renderProfilePage() {
     ${!hasTgId ? `<div class="alert-banner blue" style="margin-bottom:14px">
       <i class="fab fa-telegram alert-icon"></i>
       <div>
-        <strong>Telegram xabarlari uchun:</strong><br>
-        1. Botni ochin: <a href="https://t.me/boomstroy_bot" target="_blank" style="color:#1d4ed8;font-weight:700">@boomstroy_bot</a><br>
-        2. /start bosing — bot sizga ID beradi<br>
-        3. Shu ID ni quyidagi "Telegram ID" maydoniga kiriting
+        <strong>Telegram orqali aksiya va buyurtma xabarlari uchun ID ulang:</strong><br>
+        1. Botni oching va <b>Start</b> bosing<br>
+        2. <b>"👤 Profilim"</b> tugmasini bosing — bot sizga <b>ID</b> beradi<br>
+        3. ID ni <b>nusxalab</b>, pastdagi "Telegram ID" maydoniga qo'ying va saqlang
+        <div style="margin-top:8px">
+          <a href="https://t.me/BoomStroyBot" target="_blank" class="btn btn-primary" style="display:inline-flex;text-decoration:none">
+            <i class="fab fa-telegram"></i> @BoomStroyBot ni ochish
+          </a>
+        </div>
       </div>
     </div>` : `<div class="alert-banner green" style="margin-bottom:14px">
       <i class="fab fa-telegram alert-icon"></i>
-      <div>✅ Telegram ulangan! Buyurtma xabarlari keladi.</div>
+      <div>✅ Telegram ulangan! Buyurtma holati va aksiya xabarlari Telegram'ga ham keladi.</div>
     </div>`}
 
     <div class="profile-stats">
@@ -2233,7 +2352,7 @@ function renderProfilePage() {
         <input class="form-control" id="pf-tgid" type="text" placeholder="Masalan: 123456789" value="${u.telegramId || ""}">
         <div class="form-hint">
           <i class="fab fa-telegram" style="color:#2ca5e0"></i>
-          <a href="https://t.me/boomstroy_bot" target="_blank" style="color:#2ca5e0">@boomstroy_bot</a> ga /start bosib ID oling
+          <a href="https://t.me/BoomStroyBot" target="_blank" style="color:#2ca5e0;font-weight:700">@BoomStroyBot</a> → Start → "Profilim" → ID ni nusxalab shu yerga qo'ying
         </div>
       </div>
       <div class="form-group"><label class="form-label">Yangi parol (ixtiyoriy)</label>
@@ -2324,7 +2443,7 @@ function renderFAQ() {
     },
     {
       q: "Telegram bildirishnoma qanday ishlaydi?",
-      a: "1. @boomstroy_bot ga o'ting. 2. /start bosing — bot sizga Telegram ID beradi. 3. Profilingizga shu ID ni kiriting va saqlang. Shundan keyin barcha buyurtma xabarlari keladi."
+      a: "1. @BoomStroyBot ga o'ting va Start bosing. 2. \"👤 Profilim\" tugmasini bosing — bot sizga Telegram ID beradi. 3. ID ni nusxalab, profilingizdagi \"Telegram ID\" maydoniga qo'ying va saqlang. Shundan keyin buyurtma holati va aksiya/chegirma xabarlari Telegram'ga keladi."
     },
     {
       q: "Chegirmalar qanday ishlaydi?",
@@ -2372,6 +2491,7 @@ async function init() {
   }
 
   await loadAll();
+  startAnnListener();
   setTimeout(renderFAQ, 100);
 }
 
