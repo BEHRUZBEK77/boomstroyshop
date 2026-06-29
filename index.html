@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0">
     <title>BoomStroy — Qurilish Materiallari Do'koni</title>
     <meta name="description"
-        content="BoomStroy - Toshkentdagi eng yaxshi qurilish materiallari do'koni. Tez yetkazib berish, arzon narxlar.">
+        content="BoomStroy - Bekobodagi eng yaxshi qurilish materiallari do'koni. Tez yetkazib berish, arzon narxlar.">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
@@ -406,6 +406,12 @@
         .payment-option-icon{font-size:30px;display:block;margin-bottom:8px}
         .payment-option-name{font-size:14px;font-weight:700}
         .payment-option-sub{font-size:12px;color:var(--text-muted);margin-top:3px}
+        .delivery-type-grid{display:grid;grid-template-columns:1fr 1fr;gap:11px;margin-bottom:6px}
+        .delivery-type-option{border:2px solid var(--border-light);border-radius:var(--r-lg);padding:16px;text-align:center;cursor:pointer;transition:all var(--t-base)}
+        .delivery-type-option:hover,.delivery-type-option.selected{border-color:var(--brand-primary);background:var(--brand-pale)}
+        .delivery-type-option .dt-icon{font-size:28px;display:block;margin-bottom:8px}
+        .delivery-type-option .dt-name{font-size:14px;font-weight:700}
+        .delivery-type-option .dt-sub{font-size:11.5px;color:var(--text-muted);margin-top:3px;line-height:1.4}
         .card-info-block{background:var(--blue-bg);border:1px solid var(--blue-border);border-left:4px solid var(--blue);border-radius:var(--r-md);padding:16px;margin-bottom:14px}
         .card-number{font-family:monospace;font-size:19px;font-weight:700;letter-spacing:2px;color:var(--dark-800);margin:7px 0}
         .btn-copy{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;background:var(--brand-primary);color:#fff;border:none;border-radius:7px;font-size:12px;cursor:pointer;margin-top:6px;transition:background var(--t-fast)}
@@ -440,6 +446,12 @@
         .auth-tabs{display:flex;gap:5px;background:var(--bg-base);border-radius:var(--r-md);padding:5px;margin-bottom:20px}
         .auth-tab{flex:1;padding:9px;border:none;border-radius:var(--r-sm);background:none;cursor:pointer;font-size:14px;font-weight:700;color:var(--text-muted);transition:all var(--t-fast)}
         .auth-tab.active{background:var(--bg-surface);color:var(--brand-primary);box-shadow:var(--sh-sm)}
+        .auth-divider{display:flex;align-items:center;text-align:center;margin:18px 0 14px;color:var(--text-muted);font-size:12px}
+        .auth-divider::before,.auth-divider::after{content:"";flex:1;height:1px;background:var(--border-light)}
+        .auth-divider span{padding:0 12px}
+        .btn-google{display:flex;align-items:center;justify-content:center;gap:10px;padding:11px;border:1.5px solid var(--border-light);border-radius:var(--r-md);background:var(--bg-surface);color:var(--text-primary);font-size:14px;font-weight:700;cursor:pointer;transition:all var(--t-fast)}
+        .btn-google:hover{background:var(--bg-base);border-color:var(--brand-primary)}
+        .btn-google:disabled{opacity:.7;cursor:not-allowed}
 
         /* ═══ PROFILE ═══ */
         .profile-hero{background:linear-gradient(135deg,var(--dark-800),var(--dark-700));border-radius:var(--r-xl);padding:24px;color:#fff;display:flex;align-items:center;gap:18px;margin-bottom:18px;box-shadow:var(--sh-md)}
@@ -836,10 +848,15 @@
         <span></span>
     </button>
     <div class="logo-wrap" onclick="goPage('home')">
-        <div class="logo-icon"><i class="fas fa-hard-hat"></i></div>
+        <div class="logo-icon" style="background:#fff;padding:6px">
+            <svg viewBox="0 0 48 54" width="100%" height="100%" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="BoomStroy logo">
+                <path d="M18 3 L33 11.5 L18 20 Z" fill="#F2B01E"/>
+                <path d="M13 14 H35 L23 27 H35 L13 51 L25 31 H13 Z" fill="#111111"/>
+            </svg>
+        </div>
         <div>
-            <div class="logo-text">BoomStroy</div>
-            <div class="logo-sub">Qurilish materiallari</div>
+            <div class="logo-text">BOOMSTROY</div>
+            <div class="logo-sub">Qurilish Savdo</div>
         </div>
     </div>
 
@@ -966,7 +983,7 @@
                     <div>
                         <div class="hero-label"><i class="fas fa-hard-hat"></i> #1 Qurilish materiallari</div>
                         <h1 class="hero-title"><span>BoomStroy</span> —<br>Sifat va Ishonch</h1>
-                        <p class="hero-desc">Toshkent bo'ylab tez yetkazib berish.<br>
+                        <p class="hero-desc">Bekobod bo'ylab tez yetkazib berish.<br>
                             Manzilingizni GPS yoki xaritadan aniq belgilang — yetkazib berish narxi va vaqti aniq hisoblanadi.</p>
                         <div class="hero-ctas">
                             <button class="hero-cta-primary" onclick="goPage('catalog')"><i class="fas fa-th-large"></i> Katalogga o'tish</button>
@@ -1114,6 +1131,9 @@
             <div class="alert-banner green"><i class="fas fa-truck alert-icon"></i>
                 <div><strong>Yetkazib berish:</strong> 10 000 so'm + har km uchun 2 000 so'm. Km bo'yicha hech qanday cheklov yo'q!</div>
             </div>
+            <div class="alert-banner blue"><i class="fas fa-store alert-icon"></i>
+                <div><strong>Borib olish (bepul):</strong> Buyurtmangizni do'konimizdan o'zingiz olib ketishingiz mumkin — Bekobod tumani, Zafar shaharchasi. Ish vaqti: Har kuni 07:00–20:30.</div>
+            </div>
 
             <div class="content-card">
                 <div class="content-card-title"><i class="fas fa-map-location-dot"></i> Manzilimni tekshirish</div>
@@ -1139,13 +1159,13 @@
         <div class="page" id="page-about">
             <div class="about-hero">
                 <div class="about-title">🏗️ BoomStroy Haqida</div>
-                <div class="about-sub">Toshkentdagi eng yaxshi qurilish materiallari do'koni</div>
+                <div class="about-sub">Bekobodagi eng yaxshi qurilish materiallari do'koni</div>
             </div>
 
             <div class="content-card">
                 <div class="content-card-title"><i class="fas fa-shield-alt"></i> Bizning afzalliklarimiz</div>
                 <div style="font-size:14px;color:var(--text-secondary);line-height:2.7">
-                    <div><i class="fas fa-check" style="color:var(--green);width:22px"></i> 10 yildan ortiq bozordagi tajriba</div>
+                    <div><i class="fas fa-check" style="color:var(--green);width:22px"></i> 5 yildan ortiq bozordagi tajriba</div>
                     <div><i class="fas fa-check" style="color:var(--green);width:22px"></i> 5000+ mahsulot assortimenti</div>
                     <div><i class="fas fa-check" style="color:var(--green);width:22px"></i> Sifat va originallik kafolati</div>
                     <div><i class="fas fa-check" style="color:var(--green);width:22px"></i> Aniq manzil tizimi — GPS va xarita orqali</div>
@@ -1166,8 +1186,8 @@
                     <div><i class="fas fa-phone" style="color:var(--brand-primary);width:22px"></i> <a class="contact-link" href="tel:+998942171010">+998 94 217 10 10</a></div>
                     <div><i class="fab fa-telegram" style="color:var(--brand-primary);width:22px"></i> <a class="contact-link" href="https://t.me/BoomStroyBot" target="_blank">@BoomStroyBot</a></div>
                     <div><i class="fas fa-envelope" style="color:var(--brand-primary);width:22px"></i> <a class="contact-link" href="mailto:info@boomstroy.uz">info@boomstroy.uz</a></div>
-                    <div><i class="fas fa-map-marker-alt" style="color:var(--brand-primary);width:22px"></i> Toshkent shahar, Chilonzor tumani</div>
-                    <div><i class="fas fa-clock" style="color:var(--brand-primary);width:22px"></i> Du–Sh: 09:00–18:00 · Yak: 10:00–15:00</div>
+                    <div><i class="fas fa-map-marker-alt" style="color:var(--brand-primary);width:22px"></i> Bekobod tumani, Zafar shaharchasi</div>
+                    <div><i class="fas fa-clock" style="color:var(--brand-primary);width:22px"></i> Har kuni: 07:00–20:30</div>
                     <div><i class="fas fa-robot" style="color:var(--purple);width:22px"></i> <span onclick="openAIChat()" style="color:var(--purple);cursor:pointer;font-weight:700">BoomStroy AI — 24/7 onlayn maslahat</span></div>
                 </div>
             </div>
@@ -1367,11 +1387,11 @@ let aiTyping = false;
 const AI_SYSTEM = `Sen BoomStroy do'konining AI yordamchisisn. Sening ismingiz BoomStroy AI.
 
 BoomStroy haqida asosiy ma'lumotlar:
-- Qurilish materiallari do'koni, Toshkent, Chilonzor tumani
+- Qurilish materiallari do'koni, Bekobod tumani, Zafar shaharchasi
 - Telefon: +998 94 217 10 10
 - Telegram bot: @BoomStroyBot
 - Veb-sayt: boom-ai.netlify.app
-- Ish vaqti: Du-Sh 09:00-18:00, Yak 10:00-15:00
+- Ish vaqti: Har kuni 07:00-20:30
 
 Yetkazib berish:
 - Boshlang'ich narx: 10 000 so'm
@@ -1525,7 +1545,7 @@ function aiFallbackReply(text) {
         return "🚚 **Yetkazib berish:**\n• Boshlang'ich narx: **10 000 so'm**\n• Har km uchun: **2 000 so'm**\n• Masofa cheklovi: **YO'Q** — istalgan masofaga yetkazamiz!\n• GPS va xaritadan aniq manzil belgilang";
     }
     if (t.includes('telefon') || t.includes('aloqa') || t.includes('bog\'lan')) {
-        return "📞 **Aloqa:**\n• Telefon: **+998 94 217 10 10**\n• Telegram: **@BoomStroyBot**\n• Email: info@boomstroy.uz\n• Ish vaqti: Du-Sh 09:00-18:00";
+        return "📞 **Aloqa:**\n• Telefon: **+998 94 217 10 10**\n• Telegram: **@BoomStroyBot**\n• Email: info@boomstroy.uz\n• Manzil: Bekobod tumani, Zafar shaharchasi\n• Ish vaqti: Har kuni 07:00-20:30";
     }
     if (t.includes('buyurtma') || t.includes('order')) {
         return "🛒 **Buyurtma berish:**\n1. Savatga mahsulot qo'shing\n2. \"Buyurtma berish\" tugmasini bosing\n3. Ma'lumotlaringizni kiriting\n4. GPS/xaritadan manzilingizni belgilang\n5. To'lov turini tanlang\n\nHolat o'zgarganda Telegram orqali xabar keladi!";

@@ -17,6 +17,9 @@ import {
   addDoc, updateDoc, query, orderBy, where,
   serverTimestamp, limit, onSnapshot
 } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+import {
+  getAuth, GoogleAuthProvider, signInWithPopup
+} from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 
 // ─── Firebase Config ────────────────────────────
 const FB_CONFIG = {
@@ -29,6 +32,8 @@ const FB_CONFIG = {
 };
 const fbApp = initializeApp(FB_CONFIG);
 const db = getFirestore(fbApp);
+const fbAuth = getAuth(fbApp);
+const googleProvider = new GoogleAuthProvider();
 
 // ─── Telegram Bot ────────────────────────────────
 const TG_TOKEN = "8738939484:AAH0RJYIiGgSRK1FvfBFks_u5q3smd274l4";
@@ -76,6 +81,10 @@ const PER_KM = 2000;
 const CARD_NUM = "8600 0000 0000 0000";
 const CARD_OWNER = "BoomStroy LLC";
 const PAGE_SIZE = 12;
+
+// ─── Do'kon / olib ketish manzili ────────────────
+const SHOP_ADDRESS = "Bekobod tumani, Zafar shaharchasi";
+const SHOP_HOURS = "Har kuni 07:00–20:30";
 
 const RESTRICTED_WORDS = [
   "bo'ka", "boka", "bo`ka", "sirdaryo", "jizzax", "samarqand",
@@ -719,12 +728,19 @@ function buildAuthModal() {
         </button>
       </div>
 
-      <div class="alert-banner blue" style="margin-top:14px">
-        <i class="fas fa-info-circle alert-icon"></i>
-        <div style="font-size:12px">
-         
-        </div>
-      </div>
+      <div class="auth-divider"><span>yoki</span></div>
+
+      <button class="btn-google btn-wide" id="google-btn" onclick="googleSignIn()">
+        <svg width="18" height="18" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+          <path fill="#FFC107" d="M43.6 20.5h-1.9V20H24v8h11.3c-1.6 4.7-6.1 8-11.3 8-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.5 4.5 29.5 2.5 24 2.5 12.1 2.5 2.5 12.1 2.5 24S12.1 45.5 24 45.5 45.5 35.9 45.5 24c0-1.2-.1-2.4-.4-3.5z"/>
+          <path fill="#FF3D00" d="M5.3 13.7l6.6 4.8C13.6 14.6 18.4 11.5 24 11.5c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.5 4.5 29.5 2.5 24 2.5 16.1 2.5 9.2 7 5.3 13.7z"/>
+          <path fill="#4CAF50" d="M24 45.5c5.4 0 10.3-2.1 14-5.4l-6.5-5.5c-2 1.5-4.7 2.4-7.5 2.4-5.2 0-9.6-3.3-11.2-8l-6.5 5C9.1 40.9 16 45.5 24 45.5z"/>
+          <path fill="#1976D2" d="M43.6 20.5H24v8h11.3c-.8 2.2-2.2 4.1-4.1 5.6l6.5 5.5c-.5.4 7-5.1 7-15.6 0-1.2-.1-2.4-.4-3.5z"/>
+        </svg>
+        Google orqali kirish
+      </button>
+
+      <div id="google-err" class="alert-banner red" style="display:none;margin-top:12px"></div>
     </div>
   </div>`;
 }
@@ -872,6 +888,94 @@ window.doRegister = async function () {
   } catch (e) {
     authErr("register", "Xatolik: " + e.message);
     btn.disabled = false; btn.innerHTML = `<i class="fas fa-user-plus"></i> Ro'yxatdan o'tish`;
+  }
+};
+
+// ─── Google orqali kirish ────────────────────────
+window.googleSignIn = async function () {
+  const btn = document.getElementById("google-btn");
+  const errEl = document.getElementById("google-err");
+  if (errEl) errEl.style.display = "none";
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = `<div class="spinner" style="width:18px;height:18px;border-width:2px;display:inline-block"></div> Kutilmoqda...`;
+  }
+
+  try {
+    const result = await signInWithPopup(fbAuth, googleProvider);
+    const gUser = result.user;
+    const gUid = gUser.uid;
+    const email = (gUser.email || "").toLowerCase();
+    const name = gUser.displayName || (email ? email.split("@")[0] : "Foydalanuvchi");
+
+    // Avval shu Google hisobi bilan ro'yxatdan o'tganmi — tekshiramiz
+    let userData = null;
+    const byUid = await getDocs(
+      query(collection(db, "users"), where("googleUid", "==", gUid), limit(1))
+    );
+    if (!byUid.empty) {
+      const d = byUid.docs[0];
+      userData = { id: d.id, ...d.data() };
+    } else if (email) {
+      const byEmail = await getDocs(
+        query(collection(db, "users"), where("email", "==", email), limit(1))
+      );
+      if (!byEmail.empty) {
+        const d = byEmail.docs[0];
+        userData = { id: d.id, ...d.data() };
+        // googleUid ni bog'lab qo'yamiz
+        await updateDoc(doc(db, "users", d.id), { googleUid: gUid, lastLoginAt: serverTimestamp() });
+      }
+    }
+
+    if (userData) {
+      await updateDoc(doc(db, "users", userData.id), { lastLoginAt: serverTimestamp() });
+    } else {
+      // Yangi foydalanuvchi yaratamiz
+      const newUser = {
+        fullName: name,
+        email,
+        googleUid: gUid,
+        photoURL: gUser.photoURL || "",
+        phone: gUser.phoneNumber || "",
+        telegramUsername: "",
+        telegramId: "",
+        orderCount: 0,
+        totalSpent: 0,
+        createdAt: serverTimestamp(),
+        lastLoginAt: serverTimestamp(),
+        source: "google"
+      };
+      const ref = await addDoc(collection(db, "users"), newUser);
+      userData = { id: ref.id, ...newUser };
+    }
+
+    saveSession(userData);
+    updateHeaderUser();
+    closeModal("modal-auth");
+    showToast(`Xush kelibsiz, ${userData.fullName}! 👋`, "success");
+    allOrders = [];
+    startOrdersListener();
+    renderHomeStats();
+    renderProfilePage();
+
+  } catch (e) {
+    let msg = e.message || "Xatolik yuz berdi";
+    if (e.code === "auth/popup-closed-by-user") msg = "Oyna yopildi. Qayta urinib ko'ring.";
+    else if (e.code === "auth/cancelled-popup-request") msg = "Avvalgi urinish bekor qilindi.";
+    else if (e.code === "auth/unauthorized-domain") msg = "Bu domen Firebase'da ruxsat etilmagan.";
+    else if (e.code === "auth/operation-not-allowed") msg = "Google kirish Firebase'da yoqilmagan.";
+    if (errEl) {
+      errEl.style.display = "flex";
+      errEl.innerHTML = `<i class="fas fa-exclamation-circle alert-icon"></i><div>${msg}</div>`;
+    } else {
+      showToast(msg, "error");
+    }
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = `<svg width="18" height="18" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg"><path fill="#FFC107" d="M43.6 20.5h-1.9V20H24v8h11.3c-1.6 4.7-6.1 8-11.3 8-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.5 4.5 29.5 2.5 24 2.5 12.1 2.5 2.5 12.1 2.5 24S12.1 45.5 24 45.5 45.5 35.9 45.5 24c0-1.2-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M5.3 13.7l6.6 4.8C13.6 14.6 18.4 11.5 24 11.5c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.5 4.5 29.5 2.5 24 2.5 16.1 2.5 9.2 7 5.3 13.7z"/><path fill="#4CAF50" d="M24 45.5c5.4 0 10.3-2.1 14-5.4l-6.5-5.5c-2 1.5-4.7 2.4-7.5 2.4-5.2 0-9.6-3.3-11.2-8l-6.5 5C9.1 40.9 16 45.5 24 45.5z"/><path fill="#1976D2" d="M43.6 20.5H24v8h11.3c-.8 2.2-2.2 4.1-4.1 5.6l6.5 5.5c-.5.4 7-5.1 7-15.6 0-1.2-.1-2.4-.4-3.5z"/></svg> Google orqali kirish`;
+    }
   }
 };
 
@@ -1544,7 +1648,8 @@ window.startOrderFlow = function () {
   orderData = {
     name: currentUser.fullName || "",
     phone: currentUser.phone || "",
-    telegram: currentUser.telegramUsername || ""
+    telegram: currentUser.telegramUsername || "",
+    deliveryType: "delivery"
   };
   renderOrderStep();
   openModal("modal-order");
@@ -1608,50 +1713,83 @@ function renderOrderStep() {
       </button>`;
 
   } else if (orderStep === 2) {
-    if (title) title.textContent = "2-qadam: Yetkazib berish manzili";
-    body.innerHTML = stepsBarHTML() + `
-      <div class="alert-banner blue" style="margin-bottom:14px">
-        <i class="fas fa-location-crosshairs alert-icon"></i>
-        <div><strong>Aniq manzil uchun:</strong> GPS yoki xaritadan tanlang — narx avtomatik hisoblanadi.</div>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:14px">
-        <button class="btn btn-primary" onclick="getMyLocation()">
-          <i class="fas fa-location-crosshairs"></i> GPS bilan aniqlash
-        </button>
-        <button class="btn btn-secondary" onclick="openOrderMapPicker()">
-          <i class="fas fa-map-location-dot"></i> Xaritadan tanlash
-        </button>
-      </div>
-      <div id="delivery-calc-box" style="margin-bottom:14px">
-        ${orderData.deliveryFee ? `<div class="delivery-result-ok">
-          ✅ Manzil aniqlangan<br>
-          📍 ${orderData.address || "—"}<br>
-          📏 <strong>${orderData.distance} km</strong> · 🚚 <strong>${fmt(orderData.deliveryFee)} so'm</strong>
-        </div>` : ""}
-      </div>
-      <div class="form-group">
-        <label class="form-label">Manzil matni (ko'cha, uy, mo'ljal) <span>*</span></label>
-        <input class="form-control" id="ord-address" placeholder="Ko'cha, uy, mo'ljal..." value="${orderData.address || ""}">
-        <div class="form-hint"><i class="fas fa-info-circle"></i> GPS/xaritadan tanlanganda avtomatik to'ldiriladi</div>
-      </div>
-      <div class="form-row" style="margin-bottom:6px">
-        <div class="form-group">
-          <label class="form-label">Kenglik (Lat)</label>
-          <input class="form-control" id="ord-lat" type="number" step="any" placeholder="41.2995"
-            value="${orderData.lat || ""}">
+    if (title) title.textContent = "2-qadam: Yetkazib berish turi";
+    const isPickup = orderData.deliveryType === "pickup";
+    const methodSelector = `
+      <div style="font-size:13px;font-weight:700;margin-bottom:10px">Qabul qilish turini tanlang:</div>
+      <div class="delivery-type-grid">
+        <div class="delivery-type-option${!isPickup ? " selected" : ""}" onclick="selectDeliveryType('delivery')">
+          <span class="dt-icon">🚚</span>
+          <div class="dt-name">Yetkazib berish</div>
+          <div class="dt-sub">Manzilingizga olib boramiz</div>
         </div>
-        <div class="form-group">
-          <label class="form-label">Uzunlik (Lng)</label>
-          <input class="form-control" id="ord-lng" type="number" step="any" placeholder="69.2401"
-            value="${orderData.lng || ""}">
+        <div class="delivery-type-option${isPickup ? " selected" : ""}" onclick="selectDeliveryType('pickup')">
+          <span class="dt-icon">🏬</span>
+          <div class="dt-name">Borib olish</div>
+          <div class="dt-sub">Do'kondan o'zingiz olasiz · bepul</div>
         </div>
-      </div>
-      <button class="btn btn-primary btn-wide" onclick="orderNext2()">
-        <i class="fas fa-calculator"></i> Narxni hisoblash va davom etish
-      </button>
+      </div>`;
+
+    const backBtn = `
       <button class="btn btn-ghost btn-wide" style="margin-top:7px" onclick="orderStep=1;renderOrderStep()">
         <i class="fas fa-arrow-left"></i> Orqaga
       </button>`;
+
+    if (isPickup) {
+      body.innerHTML = stepsBarHTML() + methodSelector + `
+        <div class="alert-banner green" style="margin-bottom:14px;margin-top:14px">
+          <i class="fas fa-store alert-icon"></i>
+          <div>
+            <strong>Borib olish (bepul):</strong> Buyurtmangizni do'konimizdan olib ketasiz.<br>
+            📍 ${SHOP_ADDRESS}<br>
+            🕒 ${SHOP_HOURS}
+          </div>
+        </div>
+        <button class="btn btn-primary btn-wide" onclick="orderNext2()">
+          Davom etish <i class="fas fa-arrow-right"></i>
+        </button>` + backBtn;
+    } else {
+      body.innerHTML = stepsBarHTML() + methodSelector + `
+        <div class="alert-banner blue" style="margin-bottom:14px;margin-top:14px">
+          <i class="fas fa-location-crosshairs alert-icon"></i>
+          <div><strong>Aniq manzil uchun:</strong> GPS yoki xaritadan tanlang — narx avtomatik hisoblanadi.</div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:14px">
+          <button class="btn btn-primary" onclick="getMyLocation()">
+            <i class="fas fa-location-crosshairs"></i> GPS bilan aniqlash
+          </button>
+          <button class="btn btn-secondary" onclick="openOrderMapPicker()">
+            <i class="fas fa-map-location-dot"></i> Xaritadan tanlash
+          </button>
+        </div>
+        <div id="delivery-calc-box" style="margin-bottom:14px">
+          ${orderData.deliveryFee ? `<div class="delivery-result-ok">
+            ✅ Manzil aniqlangan<br>
+            📍 ${orderData.address || "—"}<br>
+            📏 <strong>${orderData.distance} km</strong> · 🚚 <strong>${fmt(orderData.deliveryFee)} so'm</strong>
+          </div>` : ""}
+        </div>
+        <div class="form-group">
+          <label class="form-label">Manzil matni (ko'cha, uy, mo'ljal) <span>*</span></label>
+          <input class="form-control" id="ord-address" placeholder="Ko'cha, uy, mo'ljal..." value="${orderData.address || ""}">
+          <div class="form-hint"><i class="fas fa-info-circle"></i> GPS/xaritadan tanlanganda avtomatik to'ldiriladi</div>
+        </div>
+        <div class="form-row" style="margin-bottom:6px">
+          <div class="form-group">
+            <label class="form-label">Kenglik (Lat)</label>
+            <input class="form-control" id="ord-lat" type="number" step="any" placeholder="41.2995"
+              value="${orderData.lat || ""}">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Uzunlik (Lng)</label>
+            <input class="form-control" id="ord-lng" type="number" step="any" placeholder="69.2401"
+              value="${orderData.lng || ""}">
+          </div>
+        </div>
+        <button class="btn btn-primary btn-wide" onclick="orderNext2()">
+          <i class="fas fa-calculator"></i> Narxni hisoblash va davom etish
+        </button>` + backBtn;
+    }
 
   } else if (orderStep === 3) {
     if (title) title.textContent = "3-qadam: To'lov";
@@ -1661,12 +1799,13 @@ function renderOrderStep() {
     const disc = Math.round(prodTotal * discRate), netProd = prodTotal - disc,
       grand = netProd + (orderData.deliveryFee || 0);
 
+    const isPickup = orderData.deliveryType === "pickup";
     body.innerHTML = stepsBarHTML() + `
       <div class="delivery-infobox" style="margin-bottom:14px">
         <div class="delivery-infobox-grid">
-          <div><div class="di-label">Manzil</div><div class="di-value sm">${orderData.address || "—"}</div></div>
-          <div><div class="di-label">Masofa</div><div class="di-value">${orderData.distance || 0} km</div></div>
-          <div><div class="di-label">Yetkazib berish</div><div class="di-value">${fmt(orderData.deliveryFee || 0)} so'm</div></div>
+          <div><div class="di-label">${isPickup ? "Olish turi" : "Manzil"}</div><div class="di-value sm">${isPickup ? "🏬 Borib olish — " + SHOP_ADDRESS : (orderData.address || "—")}</div></div>
+          ${isPickup ? "" : `<div><div class="di-label">Masofa</div><div class="di-value">${orderData.distance || 0} km</div></div>`}
+          <div><div class="di-label">Yetkazib berish</div><div class="di-value">${isPickup ? "Bepul" : fmt(orderData.deliveryFee || 0) + " so'm"}</div></div>
           <div><div class="di-label">JAMI</div><div class="di-value" style="font-size:22px">${fmt(grand)} so'm</div></div>
         </div>
         ${orderData.discount ? `<div style="margin-top:10px;background:rgba(255,255,255,.1);border-radius:6px;padding:6px 12px;font-size:12px;color:#a0f0c0">🎁 ${orderData.discount}</div>` : ""}
@@ -1676,7 +1815,7 @@ function renderOrderStep() {
         <div class="payment-option${orderData.payment === "cash" ? " selected" : ""}" onclick="selectPayment('cash',this)">
           <span class="payment-option-icon">💵</span>
           <div class="payment-option-name">Naqd pul</div>
-          <div class="payment-option-sub">Yetkazuvchiga</div>
+          <div class="payment-option-sub">${isPickup ? "Do'konda" : "Yetkazuvchiga"}</div>
         </div>
         <div class="payment-option${orderData.payment === "card" ? " selected" : ""}" onclick="selectPayment('card',this)">
           <span class="payment-option-icon">💳</span>
@@ -1713,7 +1852,30 @@ window.orderNext1 = function () {
   orderStep = 2; renderOrderStep();
 };
 
+window.selectDeliveryType = function (type) {
+  orderData.deliveryType = type;
+  if (type === "pickup") {
+    orderData.address = SHOP_ADDRESS;
+    orderData.lat = null; orderData.lng = null;
+    orderData.distance = 0; orderData.deliveryFee = 0; orderData.discount = null;
+  } else {
+    // Olib ketishdan yetkazib berishga qaytganda do'kon manzilini tozalaymiz
+    if (orderData.address === SHOP_ADDRESS) orderData.address = "";
+    orderData.deliveryFee = orderData.deliveryFee || 0;
+  }
+  renderOrderStep();
+};
+
 window.orderNext2 = function () {
+  // Borib olish — manzil/koordinata talab qilinmaydi
+  if (orderData.deliveryType === "pickup") {
+    orderData.address = SHOP_ADDRESS;
+    orderData.lat = null; orderData.lng = null;
+    orderData.distance = 0; orderData.deliveryFee = 0; orderData.discount = null;
+    orderStep = 3; renderOrderStep();
+    return;
+  }
+
   const address = document.getElementById("ord-address")?.value.trim();
   const latRaw = document.getElementById("ord-lat")?.value;
   const lngRaw = document.getElementById("ord-lng")?.value;
@@ -1785,6 +1947,7 @@ window.confirmOrder = async function () {
     discount: disc,
     discountRate: Math.round(discRate * 100),
     paymentType: orderData.payment,
+    deliveryType: orderData.deliveryType || "delivery",
     paymentStatus: "pending",
     status: "pending",
     deliveryAddress: orderData.address || "",
@@ -1829,6 +1992,7 @@ window.confirmOrder = async function () {
     // telegramId — foydalanuvchi botni /start qilganida Firestore ga yoziladi
     const tgId = currentUser.telegramId || "";
 
+    const isPickup = orderData.deliveryType === "pickup";
     const tgMsgMijoz =
       `✅ <b>Buyurtmangiz qabul qilindi!</b>\n\n` +
       `📋 № <b>${orderNum}</b>\n` +
@@ -1836,11 +2000,14 @@ window.confirmOrder = async function () {
       `📱 ${orderData.phone}\n` +
       `📦 ${cnt} ta mahsulot\n` +
       `💵 Mahsulotlar: ${fmt(netProd)} so'm\n` +
-      `🚚 Yetkazib berish: ${fmt(orderData.deliveryFee || 0)} so'm\n` +
+      (isPickup
+        ? `🏬 Olish turi: Borib olish (bepul)\n`
+        : `🚚 Yetkazib berish: ${fmt(orderData.deliveryFee || 0)} so'm\n`) +
       `💰 Jami: <b>${fmt(grand)} so'm</b>\n` +
       `💳 To'lov: ${orderData.payment === "card" ? "💳 Plastik karta" : "💵 Naqd pul"}\n` +
-      `📍 ${orderData.address || "—"}\n` +
-      (orderData.distance ? `📏 Masofa: ${orderData.distance} km\n` : "") +
+      `📍 ${isPickup ? SHOP_ADDRESS + " (do'kondan olib ketish)" : (orderData.address || "—")}\n` +
+      (!isPickup && orderData.distance ? `📏 Masofa: ${orderData.distance} km\n` : "") +
+      (isPickup ? `🕒 Ish vaqti: ${SHOP_HOURS}\n` : "") +
       `\nTez orada operatorimiz bog'lanadi! 📞\n` +
       `\n<b>Buyurtma holati o'zgarganda xabar keladi.</b>`;
 
