@@ -120,6 +120,9 @@ let cart = [];
 let allOrders = [];
 let announcements = [];
 let _annUnsub = null;
+let warehouses = [];            // Admin paneldan — location bilan omborlar
+let selectedWarehouseId = null; // Foydalanuvchi tanlagan ombor
+const DEFAULT_BASE = { lat: 41.299496, lng: 69.240073 }; // zaxira nuqta
 let currentCat = "";
 let currentPage = 1;
 let filteredProds = [];
@@ -194,6 +197,36 @@ function haversine(lat1, lng1, lat2, lng2) {
   const a = Math.sin(dLat / 2) ** 2 +
     Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// ─── Omborlar (admin paneldan) ──────────────────
+async function loadWarehouses() {
+  try {
+    const snap = await getDocs(collection(db, "warehouses"));
+    warehouses = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      .filter(w => w.status !== "inactive" && w.location && w.location.lat != null && w.location.lng != null);
+    if (warehouses.length && !warehouses.find(w => w.id === selectedWarehouseId)) {
+      selectedWarehouseId = warehouses[0].id;
+    }
+  } catch (e) { console.warn("Omborlar yuklanmadi:", e.message); }
+}
+function getSelectedWarehouse() {
+  return warehouses.find(w => w.id === selectedWarehouseId) || warehouses[0] || null;
+}
+// Masofa hisoblanadigan tayanch nuqta — tanlangan ombor (bo'lmasa zaxira)
+function getBaseCoord() {
+  const w = getSelectedWarehouse();
+  return (w && w.location) ? { lat: w.location.lat, lng: w.location.lng } : DEFAULT_BASE;
+}
+// Foydalanuvchiga eng yaqin omborni topish
+function nearestWarehouse(lat, lng) {
+  if (!warehouses.length) return null;
+  let best = null, bestD = Infinity;
+  for (const w of warehouses) {
+    const d = haversine(w.location.lat, w.location.lng, lat, lng);
+    if (d < bestD) { bestD = d; best = w; }
+  }
+  return best ? { warehouse: best, km: best ? bestD : 0 } : null;
 }
 
 // ─── Delivery fee — 50KM CHEKLOVI YO'Q ──────────
@@ -455,7 +488,7 @@ function placePickerMarker(lat, lng) {
 
 async function updatePickerResult(lat, lng) {
   _pickerResult = { lat, lng };
-  const dist = haversine(41.299496, 69.240073, lat, lng); // Reference point (center)
+  const _b = getBaseCoord(); const dist = haversine(_b.lat, _b.lng, lat, lng); // Reference point (center)
   const res = calcDeliveryFee(dist);
   const box = document.getElementById("map-picker-result");
   const btn = document.getElementById("map-picker-confirm-btn");
@@ -531,7 +564,7 @@ window.gpsLocateInPicker = async function () {
 
 window.confirmMapPicker = async function () {
   if (!_pickerResult?.lat) return showToast("Avval xaritadan manzil tanlang", "error");
-  const dist = haversine(41.299496, 69.240073, _pickerResult.lat, _pickerResult.lng);
+  const _b = getBaseCoord(); const dist = haversine(_b.lat, _b.lng, _pickerResult.lat, _pickerResult.lng);
   const res = calcDeliveryFee(dist);
 
   if (_pickerMode === "delivery-check") {
@@ -571,15 +604,16 @@ window.confirmMapPicker = async function () {
 window.openDeliveryCheckMap = function () {
   _pickerMode = "delivery-check";
   openModal("modal-map-picker");
-  // Toshkent markazi
-  setTimeout(() => initMapPicker(41.2995, 69.2401, 12), 200);
+  const b = getBaseCoord(); // tanlangan ombor markazi
+  setTimeout(() => initMapPicker(b.lat, b.lng, 12), 200);
 };
 
 window.openOrderMapPicker = function () {
   _pickerMode = "order";
   openModal("modal-map-picker");
-  const lat = orderData.lat || 41.2995;
-  const lng = orderData.lng || 69.2401;
+  const b = getBaseCoord();
+  const lat = orderData.lat || b.lat;
+  const lng = orderData.lng || b.lng;
   setTimeout(() => initMapPicker(lat, lng, orderData.lat ? 16 : 12), 200);
 };
 
@@ -598,7 +632,7 @@ window.getMyLocation = async function () {
 
   try {
     const loc = await getGPSLocationAccurate();
-    const dist = haversine(41.299496, 69.240073, loc.lat, loc.lng);
+    const _b = getBaseCoord(); const dist = haversine(_b.lat, _b.lng, loc.lat, loc.lng);
     const res = calcDeliveryFee(dist);
 
     // Reverse geocoding
@@ -632,7 +666,7 @@ window.getMyLocation = async function () {
 
     const ip = await getIPLocation();
     if (ip) {
-      const dist = haversine(41.299496, 69.240073, ip.lat, ip.lng);
+      const _b = getBaseCoord(); const dist = haversine(_b.lat, _b.lng, ip.lat, ip.lng);
       const res = calcDeliveryFee(dist);
       setOrderLocation(ip.lat, ip.lng, res.km, res.fee, res.discount, null);
       calcBox.innerHTML = `<div class="delivery-result-ok" style="border-left-color:var(--yellow)">
@@ -1241,10 +1275,25 @@ function goPage(page) {
   else if (page === "search") { show("search"); setTimeout(() => document.getElementById("search-page-inp")?.focus(), 100); }
   else if (page === "orders") { nav("orders", "sbn-orders", "bn-orders"); renderOrdersList(currentOrderTab); }
   else if (page === "profile") { nav("profile", "sbn-profile", "bn-profile"); renderProfilePage(); }
-  else if (page === "delivery-info") { nav("delivery-info", "sbn-delivery-info", null); }
+  else if (page === "delivery-info") { nav("delivery-info", "sbn-delivery-info", null); renderDeliveryWarehouseSel(); }
   else if (page === "about") { nav("about", "sbn-about", null); }
 }
 window.goPage = goPage;
+
+// Yetkazib berish sahifasidagi ombor tanlagichi
+function renderDeliveryWarehouseSel() {
+  const box = document.getElementById("del-warehouse-sel");
+  if (!box) return;
+  if (!warehouses.length) { box.innerHTML = ""; return; }
+  const w = getSelectedWarehouse();
+  box.innerHTML = `<div class="form-group">
+    <label class="form-label"><i class="fas fa-warehouse" style="color:var(--brand-primary)"></i> Ombor (qayerdan)</label>
+    <select class="form-control" onchange="setDeliveryWarehouse(this.value)">
+      ${warehouses.map(x => `<option value="${x.id}"${x.id === (w && w.id) ? " selected" : ""}>${esc(x.name || "Ombor")}${x.address ? " — " + esc(x.address) : ""}</option>`).join("")}
+    </select>
+  </div>`;
+}
+window.setDeliveryWarehouse = function (id) { selectedWarehouseId = id; };
 
 // ═══════════════════════════════════════════════
 // DATA LOADING
@@ -1850,12 +1899,14 @@ function renderOrderStep() {
       </button>`;
 
     if (isPickup) {
-      body.innerHTML = stepsBarHTML() + methodSelector + `
-        <div class="alert-banner green" style="margin-bottom:14px;margin-top:14px">
+      const wPick = getSelectedWarehouse();
+      body.innerHTML = stepsBarHTML() + methodSelector +
+        `<div style="margin-top:14px"></div>` + warehouseSelectorHTML("Qaysi ombordan olasiz") + `
+        <div class="alert-banner green" style="margin-bottom:14px">
           <i class="fas fa-store alert-icon"></i>
           <div>
-            <strong>Borib olish (bepul):</strong> Buyurtmangizni do'konimizdan olib ketasiz.<br>
-            📍 ${SHOP_ADDRESS}<br>
+            <strong>Borib olish (bepul):</strong> Buyurtmangizni omborimizdan olib ketasiz.<br>
+            📍 ${esc(wPick ? ((wPick.name ? wPick.name + " — " : "") + (wPick.address || SHOP_ADDRESS)) : SHOP_ADDRESS)}<br>
             🕒 ${SHOP_HOURS}
           </div>
         </div>
@@ -1863,8 +1914,9 @@ function renderOrderStep() {
           Davom etish <i class="fas fa-arrow-right"></i>
         </button>` + backBtn;
     } else {
-      body.innerHTML = stepsBarHTML() + methodSelector + `
-        <div class="alert-banner blue" style="margin-bottom:14px;margin-top:14px">
+      body.innerHTML = stepsBarHTML() + methodSelector +
+        `<div style="margin-top:14px"></div>` + warehouseSelectorHTML("Ombor (qayerdan yetkaziladi)") + `
+        <div class="alert-banner blue" style="margin-bottom:14px">
           <i class="fas fa-location-crosshairs alert-icon"></i>
           <div><strong>Aniq manzil uchun:</strong> GPS yoki xaritadan tanlang — narx avtomatik hisoblanadi.</div>
         </div>
@@ -1914,14 +1966,16 @@ function renderOrderStep() {
       grand = netProd + (orderData.deliveryFee || 0);
 
     const isPickup = orderData.deliveryType === "pickup";
+    const whName = orderData.warehouseName || (getSelectedWarehouse() ? getSelectedWarehouse().name : "");
     body.innerHTML = stepsBarHTML() + `
       <div class="delivery-infobox" style="margin-bottom:14px">
         <div class="delivery-infobox-grid">
-          <div><div class="di-label">${isPickup ? "Olish turi" : "Manzil"}</div><div class="di-value sm">${isPickup ? "🏬 Borib olish — " + SHOP_ADDRESS : (orderData.address || "—")}</div></div>
+          <div><div class="di-label">${isPickup ? "Olish turi" : "Manzil"}</div><div class="di-value sm">${isPickup ? "🏬 Borib olish — " + esc(orderData.address || SHOP_ADDRESS) : esc(orderData.address || "—")}</div></div>
           ${isPickup ? "" : `<div><div class="di-label">Masofa</div><div class="di-value">${orderData.distance || 0} km</div></div>`}
           <div><div class="di-label">Yetkazib berish</div><div class="di-value">${isPickup ? "Bepul" : fmt(orderData.deliveryFee || 0) + " so'm"}</div></div>
           <div><div class="di-label">JAMI</div><div class="di-value" style="font-size:22px">${fmt(grand)} so'm</div></div>
         </div>
+        ${whName ? `<div style="margin-top:10px;background:rgba(255,255,255,.1);border-radius:6px;padding:6px 12px;font-size:12px"><i class="fas fa-warehouse"></i> Ombor: <strong>${esc(whName)}</strong></div>` : ""}
         ${orderData.discount ? `<div style="margin-top:10px;background:rgba(255,255,255,.1);border-radius:6px;padding:6px 12px;font-size:12px;color:#a0f0c0">🎁 ${orderData.discount}</div>` : ""}
       </div>
       <div style="font-size:13px;font-weight:700;margin-bottom:10px">To'lov turini tanlang:</div>
@@ -1966,24 +2020,63 @@ window.orderNext1 = function () {
   orderStep = 2; renderOrderStep();
 };
 
+function currentShopAddress() {
+  const w = getSelectedWarehouse();
+  return w ? (w.name ? w.name + " — " : "") + (w.address || SHOP_ADDRESS) : SHOP_ADDRESS;
+}
+
 window.selectDeliveryType = function (type) {
   orderData.deliveryType = type;
   if (type === "pickup") {
-    orderData.address = SHOP_ADDRESS;
+    orderData.address = currentShopAddress();
     orderData.lat = null; orderData.lng = null;
     orderData.distance = 0; orderData.deliveryFee = 0; orderData.discount = null;
   } else {
     // Olib ketishdan yetkazib berishga qaytganda do'kon manzilini tozalaymiz
-    if (orderData.address === SHOP_ADDRESS) orderData.address = "";
+    if (orderData.address === currentShopAddress() || orderData.address === SHOP_ADDRESS) orderData.address = "";
     orderData.deliveryFee = orderData.deliveryFee || 0;
   }
   renderOrderStep();
 };
 
+// ─── Ombor tanlash (qayerdan hisoblanadi) ─────────
+function warehouseSelectorHTML(labelText) {
+  if (!warehouses.length) return "";
+  const w = getSelectedWarehouse();
+  return `<div class="form-group">
+    <label class="form-label"><i class="fas fa-warehouse" style="color:var(--brand-primary)"></i> ${labelText || "Ombor (qayerdan)"}</label>
+    <select class="form-control" id="ord-warehouse" onchange="selectWarehouse(this.value)">
+      ${warehouses.map(x => `<option value="${x.id}"${x.id === (w && w.id) ? " selected" : ""}>${esc(x.name || "Ombor")}${x.address ? " — " + esc(x.address) : ""}</option>`).join("")}
+    </select>
+    <div class="form-hint"><i class="fas fa-route"></i> Masofa va yetkazish narxi shu omborga qarab hisoblanadi</div>
+  </div>`;
+}
+
+window.selectWarehouse = function (id) {
+  selectedWarehouseId = id;
+  // Yetkazib berish tanlangan bo'lsa va manzil aniqlangan bo'lsa — qayta hisoblash
+  if (orderData.deliveryType !== "pickup" && orderData.lat != null && orderData.lng != null) {
+    const b = getBaseCoord();
+    const dist = haversine(b.lat, b.lng, orderData.lat, orderData.lng);
+    const res = calcDeliveryFee(dist);
+    orderData.distance = res.km; orderData.deliveryFee = res.fee; orderData.discount = res.discount;
+  }
+  if (orderData.deliveryType === "pickup") orderData.address = currentShopAddress();
+  const wh = getSelectedWarehouse();
+  orderData.warehouseId = wh ? wh.id : null;
+  orderData.warehouseName = wh ? wh.name : "";
+  renderOrderStep();
+};
+
 window.orderNext2 = function () {
+  // Tanlangan omborni buyurtmaga yozib qo'yamiz
+  const _wh = getSelectedWarehouse();
+  orderData.warehouseId = _wh ? _wh.id : null;
+  orderData.warehouseName = _wh ? _wh.name : "";
+
   // Borib olish — manzil/koordinata talab qilinmaydi
   if (orderData.deliveryType === "pickup") {
-    orderData.address = SHOP_ADDRESS;
+    orderData.address = currentShopAddress();
     orderData.lat = null; orderData.lng = null;
     orderData.distance = 0; orderData.deliveryFee = 0; orderData.discount = null;
     orderStep = 3; renderOrderStep();
@@ -2007,7 +2100,7 @@ window.orderNext2 = function () {
   orderData.address = addressText;
 
   if (!isNaN(lat) && !isNaN(lng)) {
-    const dist = haversine(41.299496, 69.240073, lat, lng);
+    const _b = getBaseCoord(); const dist = haversine(_b.lat, _b.lng, lat, lng);
     const res = calcDeliveryFee(dist);
     // KM limit yo'q — har doim ok
     orderData.lat = lat; orderData.lng = lng;
@@ -2062,6 +2155,8 @@ window.confirmOrder = async function () {
     discountRate: Math.round(discRate * 100),
     paymentType: orderData.payment,
     deliveryType: orderData.deliveryType || "delivery",
+    warehouseId: orderData.warehouseId || null,
+    warehouseName: orderData.warehouseName || "",
     paymentStatus: "pending",
     status: "pending",
     deliveryAddress: orderData.address || "",
@@ -2491,6 +2586,7 @@ async function init() {
   }
 
   await loadAll();
+  await loadWarehouses();
   startAnnListener();
   setTimeout(renderFAQ, 100);
 }
