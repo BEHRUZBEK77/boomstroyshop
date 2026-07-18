@@ -1295,12 +1295,16 @@ function renderDeliveryWarehouseSel() {
   const w = getSelectedWarehouse();
   box.innerHTML = `<div class="form-group">
     <label class="form-label"><i class="fas fa-warehouse" style="color:var(--brand-primary)"></i> Ombor (qayerdan)</label>
-    <select class="form-control" onchange="setDeliveryWarehouse(this.value)">
-      ${warehouses.map(x => `<option value="${x.id}"${x.id === (w && w.id) ? " selected" : ""}>${esc(x.name || "Ombor")}${x.address ? " — " + esc(x.address) : ""}</option>`).join("")}
+    <select class="form-control wh-select" onchange="setDeliveryWarehouse(this.value)">
+      ${warehouses.map(x => `<option value="${x.id}"${x.id === (w && w.id) ? " selected" : ""}>${esc(x.name || "Ombor")}${whHasGeo(x) ? "" : " • GPS yo'q"}</option>`).join("")}
     </select>
+    ${w && w.address ? `<div class="form-hint"><i class="fas fa-map-marker-alt" style="color:var(--brand-primary)"></i> ${esc(w.address)}</div>` : ""}
   </div>`;
 }
-window.setDeliveryWarehouse = function (id) { selectedWarehouseId = id; };
+window.setDeliveryWarehouse = function (id) {
+  selectedWarehouseId = id;
+  renderDeliveryWarehouseSel();
+};
 
 // ═══════════════════════════════════════════════
 // DATA LOADING
@@ -2057,12 +2061,13 @@ function warehouseSelectorHTML(labelText) {
   const noGeo = w && !whHasGeo(w);
   return `<div class="form-group">
     <label class="form-label"><i class="fas fa-warehouse" style="color:var(--brand-primary)"></i> ${labelText || "Ombor (qayerdan)"}</label>
-    <select class="form-control" id="ord-warehouse" onchange="selectWarehouse(this.value)">
-      ${warehouses.map(x => `<option value="${x.id}"${x.id === (w && w.id) ? " selected" : ""}>${esc(x.name || "Ombor")}${whHasGeo(x) ? "" : " (GPS yo'q)"}${x.address ? " — " + esc(x.address) : ""}</option>`).join("")}
+    <select class="form-control wh-select" id="ord-warehouse" onchange="selectWarehouse(this.value)">
+      ${warehouses.map(x => `<option value="${x.id}"${x.id === (w && w.id) ? " selected" : ""}>${esc(x.name || "Ombor")}${whHasGeo(x) ? "" : " • GPS yo'q"}</option>`).join("")}
     </select>
+    ${w && w.address ? `<div class="form-hint"><i class="fas fa-map-marker-alt" style="color:var(--brand-primary)"></i> ${esc(w.address)}</div>` : ""}
     ${noGeo
-      ? `<div class="form-hint" style="color:#b45309"><i class="fas fa-triangle-exclamation"></i> Bu omborga GPS belgilanmagan — masofa taxminiy. Admin panelda ombor GPS'ini belgilang.</div>`
-      : `<div class="form-hint"><i class="fas fa-route"></i> Masofa va yetkazish narxi shu omborga qarab hisoblanadi</div>`}
+      ? `<div class="form-hint" style="color:#b45309"><i class="fas fa-triangle-exclamation"></i> GPS belgilanmagan — masofa taxminiy.</div>`
+      : `<div class="form-hint"><i class="fas fa-route"></i> Masofa shu omborga qarab hisoblanadi</div>`}
   </div>`;
 }
 
