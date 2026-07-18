@@ -200,33 +200,40 @@ function haversine(lat1, lng1, lat2, lng2) {
 }
 
 // ─── Omborlar (admin paneldan) ──────────────────
+function whHasGeo(w) {
+  return !!(w && w.location && w.location.lat != null && w.location.lng != null);
+}
 async function loadWarehouses() {
   try {
     const snap = await getDocs(collection(db, "warehouses"));
+    // Barcha FAOL omborlar ko'rsatiladi (GPS bo'lmasa ham — ogohlantirish bilan)
     warehouses = snap.docs.map(d => ({ id: d.id, ...d.data() }))
-      .filter(w => w.status !== "inactive" && w.location && w.location.lat != null && w.location.lng != null);
+      .filter(w => w.status !== "inactive");
+    // Standart tanlov — koordinatasi bor birinchi ombor, bo'lmasa birinchisi
     if (warehouses.length && !warehouses.find(w => w.id === selectedWarehouseId)) {
-      selectedWarehouseId = warehouses[0].id;
+      const withGeo = warehouses.find(whHasGeo);
+      selectedWarehouseId = (withGeo || warehouses[0]).id;
     }
   } catch (e) { console.warn("Omborlar yuklanmadi:", e.message); }
 }
 function getSelectedWarehouse() {
   return warehouses.find(w => w.id === selectedWarehouseId) || warehouses[0] || null;
 }
-// Masofa hisoblanadigan tayanch nuqta — tanlangan ombor (bo'lmasa zaxira)
+// Masofa hisoblanadigan tayanch nuqta — tanlangan ombor (GPS bo'lmasa zaxira)
 function getBaseCoord() {
   const w = getSelectedWarehouse();
-  return (w && w.location) ? { lat: w.location.lat, lng: w.location.lng } : DEFAULT_BASE;
+  return whHasGeo(w) ? { lat: w.location.lat, lng: w.location.lng } : DEFAULT_BASE;
 }
-// Foydalanuvchiga eng yaqin omborni topish
+// Foydalanuvchiga eng yaqin omborni topish (faqat GPS bor omborlar orasidan)
 function nearestWarehouse(lat, lng) {
-  if (!warehouses.length) return null;
+  const geo = warehouses.filter(whHasGeo);
+  if (!geo.length) return null;
   let best = null, bestD = Infinity;
-  for (const w of warehouses) {
+  for (const w of geo) {
     const d = haversine(w.location.lat, w.location.lng, lat, lng);
     if (d < bestD) { bestD = d; best = w; }
   }
-  return best ? { warehouse: best, km: best ? bestD : 0 } : null;
+  return best ? { warehouse: best, km: bestD } : null;
 }
 
 // ─── Delivery fee — 50KM CHEKLOVI YO'Q ──────────
@@ -1816,6 +1823,10 @@ window.startOrderFlow = function () {
   };
   renderOrderStep();
   openModal("modal-order");
+  // Omborlar hali yuklanmagan bo'lsa — yuklab, 2-qadamni yangilaymiz
+  if (!warehouses.length) {
+    loadWarehouses().then(() => { if (orderStep === 2) renderOrderStep(); });
+  }
 };
 
 function stepsBarHTML() {
@@ -2043,12 +2054,15 @@ window.selectDeliveryType = function (type) {
 function warehouseSelectorHTML(labelText) {
   if (!warehouses.length) return "";
   const w = getSelectedWarehouse();
+  const noGeo = w && !whHasGeo(w);
   return `<div class="form-group">
     <label class="form-label"><i class="fas fa-warehouse" style="color:var(--brand-primary)"></i> ${labelText || "Ombor (qayerdan)"}</label>
     <select class="form-control" id="ord-warehouse" onchange="selectWarehouse(this.value)">
-      ${warehouses.map(x => `<option value="${x.id}"${x.id === (w && w.id) ? " selected" : ""}>${esc(x.name || "Ombor")}${x.address ? " — " + esc(x.address) : ""}</option>`).join("")}
+      ${warehouses.map(x => `<option value="${x.id}"${x.id === (w && w.id) ? " selected" : ""}>${esc(x.name || "Ombor")}${whHasGeo(x) ? "" : " (GPS yo'q)"}${x.address ? " — " + esc(x.address) : ""}</option>`).join("")}
     </select>
-    <div class="form-hint"><i class="fas fa-route"></i> Masofa va yetkazish narxi shu omborga qarab hisoblanadi</div>
+    ${noGeo
+      ? `<div class="form-hint" style="color:#b45309"><i class="fas fa-triangle-exclamation"></i> Bu omborga GPS belgilanmagan — masofa taxminiy. Admin panelda ombor GPS'ini belgilang.</div>`
+      : `<div class="form-hint"><i class="fas fa-route"></i> Masofa va yetkazish narxi shu omborga qarab hisoblanadi</div>`}
   </div>`;
 }
 
